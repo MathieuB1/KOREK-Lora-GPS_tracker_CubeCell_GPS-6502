@@ -3,6 +3,13 @@
  * Sketch on Heltec HTCC-AB02S
  * --> Get GPS and send data over Lora Local Node with AES encryption
  *
+ * Scenario:
+ * 1. Receive conf from Local Server see https://github.com/MathieuB1/KOREK-WifiLora-GPS_tracker
+ * AES key + Name + Sleep Frequency
+ * 2. Get GPS and Send it to Lora Node Local Server
+ * 3. Sleep each 30 seconds for waiting a "po", then send a "pi"
+ * 4. Trigger GPS until whistle timeout
+ *
  * this project also realess in GitHub:
  * https://github.com/HelTecAutomation/ASR650x-Arduino
  * */
@@ -43,8 +50,8 @@
 #define ONE_MINUTE 60000
 
 // Sleep Config
-#define timetillsleep 30000 // 30s
-#define timetillwakeup 30000 // 30s
+#define timetillsleep ONE_MINUTE // 30s
+#define timetillwakeup ONE_MINUTE // 30s
 
 // Internal AES
 #define ECB 1
@@ -55,7 +62,7 @@
 
 //if GPS module is Air530Z, use this
 #define GPS_TIMEOUT 32000*3 // Air530Z spec says 32 seconds for cold acquisition
-#define GPS_SLEEP_BEFORE_NEXT 5000 // wait 5 seconds for next capture
+#define GPS_SLEEP_BEFORE_NEXT 6000 // wait 6 seconds for next capture
 Air530ZClass GPS;
 
 // Whistle
@@ -123,7 +130,9 @@ void setup() {
 
       // Give a time slot when pressing the User Button
     pinMode(GPIO7,INPUT);
+    Serial.println("waiting for User key press");
     delay(50);
+    Serial.println("end User key press");
     int rstPinValue = digitalRead(GPIO7);
     if (!rstPinValue) {
       resetConf=true;
@@ -143,10 +152,9 @@ void loop()
   
   // Wait for Lora Signal
   Radio.Rx( 0 );
-  delay(200);
   Radio.IrqProcess( );
   // Wait for message
-  delay(5000);
+  delay(2300);
   Radio.Sleep( );
 
   // Get battery level:
@@ -220,8 +228,8 @@ void loop()
          // Preparing the message to send
         String dateStr, tmpdate, tmpmonth, latStr, lonStr, precisionStr;
 
-        if (String(GPS.date.day()).length() == 1) ? tmpdate = "0" + String(GPS.date.day()); : tmpdate = String(GPS.date.day());
-        if (String(GPS.date.month()).length() == 1) ? tmpmonth = "0" + String(GPS.date.month()); :  tmpmonth = String(GPS.date.month());
+        tmpdate = (String(GPS.date.day()).length() == 1) ? "0" + String(GPS.date.day()) : String(GPS.date.day());
+        tmpmonth = (String(GPS.date.month()).length() == 1) ? "0" + String(GPS.date.month()) :  String(GPS.date.month());
         
         dateStr += tmpdate + tmpmonth + String(GPS.date.year())[2] + String(GPS.date.year())[3];
         latStr += String(GPS.location.lat(),8);
@@ -258,7 +266,6 @@ void loop()
       triggerGps = false;
       lowpower = true;
     }
-    
 
   }
 
@@ -326,13 +333,10 @@ void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr )
 ///////////////////////////////
 void sendingMessage(char *toSend) {
     Serial.printf("\r\nsending packet \"%s\" , length %d\r\n", toSend, strlen(txpacket));
-    // Send messages for 5 seconds
-    for (uint8_t j=0; j<5; ++j){
-          // Repeat the message 5 times
-          for (uint8_t i=0; i<5; ++i){
-            Radio.Send( (uint8_t *)txpacket, strlen(txpacket) ); //send the package out
-            delay(0.2);
-          }
+    // Repeat the message 2 times
+    for (uint8_t i=0; i<2; ++i){
+      Radio.Send( (uint8_t *)txpacket, strlen(txpacket) ); //send the package out
+      delay(0.2);
     }
 
 }
@@ -342,11 +346,11 @@ uint8_t getBatteryLevel() {
   // 0      The end-device is connected to an external power source.
   // 1..254 The battery level, 1 being at minimum and 254 being at maximum
   // 255    The end-device was not able to measure the battery level.
-  const double maxBattery = 4.212;
+  const double maxBattery = 4.20; //4.212;
   const double minBattery = 3.6;
   const double batVoltage = fmax(minBattery, fmin(maxBattery, getBatteryVoltage() / 1000.0));
   const uint8_t batlevel = (BAT_LEVEL_EMPTY + ((batVoltage - minBattery) / (maxBattery - minBattery)) * (BAT_LEVEL_FULL - BAT_LEVEL_EMPTY))*100/254;
-  Serial.printf("Battery level (1-254): %u\n", batlevel);
+  Serial.printf("Battery level (1-100): %u\n", batlevel);
   return batlevel;
 }
 

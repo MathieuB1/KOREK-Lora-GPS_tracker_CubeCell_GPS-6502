@@ -14,6 +14,7 @@ Send GPS data to a Lora Local Node using the Heltec Cubecell AB02S Board
 
 # How to install:
 
- * 1. install arduino https://www.arduino.cc/en/software
+ * 1. Install arduino https://www.arduino.cc/en/software
  * 2. Install Cubecell package for Arduino https://heltec-automation-docs.readthedocs.io/en/latest/cubecell/quick_start.html
- * 3. Compile and Upload the code by using the Arduino GUI
+ * 3. Add aes.h and aes.cpp to files to Arduino
+ * 4. Compile and Upload the code by using the Arduino GUI
