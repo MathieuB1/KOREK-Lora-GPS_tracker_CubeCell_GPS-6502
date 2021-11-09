@@ -50,8 +50,8 @@
 #define ONE_MINUTE 60000
 
 // Sleep Config
-#define timetillsleep ONE_MINUTE // 30s
-#define timetillwakeup ONE_MINUTE // 30s
+#define timetillsleep ONE_MINUTE *3 // wake up each 3 minutes
+#define timetillwakeup ONE_MINUTE *3
 
 // Internal AES
 #define ECB 1
@@ -61,7 +61,7 @@
 #define DEFAULT_AES_KEY "1234123412341234" // when EEPROM conf is empty
 
 //if GPS module is Air530Z, use this
-#define GPS_TIMEOUT 32000*3 // Air530Z spec says 32 seconds for cold acquisition
+#define GPS_TIMEOUT 32000*2 // Air530Z spec says 32 seconds for cold acquisition
 #define GPS_SLEEP_BEFORE_NEXT 6000 // wait 6 seconds for next capture
 Air530ZClass GPS;
 
@@ -129,11 +129,11 @@ void setup() {
     setAesKeyCtx();
 
       // Give a time slot when pressing the User Button
-    pinMode(GPIO7,INPUT);
+    pinMode(USER_KEY,INPUT);
     Serial.println("waiting for User key press");
-    delay(50);
+    delay(200);
     Serial.println("end User key press");
-    int rstPinValue = digitalRead(GPIO7);
+    int rstPinValue = digitalRead(USER_KEY);
     if (!rstPinValue) {
       resetConf=true;
       Serial.println("Reset the conf...");
@@ -154,7 +154,7 @@ void loop()
   Radio.Rx( 0 );
   Radio.IrqProcess( );
   // Wait for message
-  delay(2300);
+  delay(2500);
   Radio.Sleep( );
 
   // Get battery level:
