@@ -50,8 +50,8 @@
 #define ONE_MINUTE 60000
 
 // Sleep Config
-#define timetillsleep ONE_MINUTE *3 // wake up each 3 minutes
-#define timetillwakeup ONE_MINUTE *3
+#define timetillsleep ONE_MINUTE * 1 // wake up each 1 minutes
+#define timetillwakeup ONE_MINUTE * 1
 
 // Internal AES
 #define ECB 1
@@ -61,12 +61,12 @@
 #define DEFAULT_AES_KEY "1234123412341234" // when EEPROM conf is empty
 
 //if GPS module is Air530Z, use this
-#define GPS_TIMEOUT 32000*2 // Air530Z spec says 32 seconds for cold acquisition
+#define GPS_TIMEOUT 32000*3 // Air530Z spec says 32 seconds for cold acquisition
 #define GPS_SLEEP_BEFORE_NEXT 6000 // wait 6 seconds for next capture
 Air530ZClass GPS;
 
 // Whistle
-#define WHISTLE_PERIOD 180000 // send gps during 3 mins
+#define WHISTLE_PERIOD ONE_MINUTE*2 // send gps during 2 mins
 
 // Lora
 char decrypted[BUFFER_SIZE];
@@ -153,8 +153,8 @@ void loop()
   // Wait for Lora Signal
   Radio.Rx( 0 );
   Radio.IrqProcess( );
-  // Wait for message
-  delay(2500);
+  // Wait for message processing
+  delay(2000);
   Radio.Sleep( );
 
   // Get battery level:
@@ -207,6 +207,7 @@ void loop()
           if( GPS.location.age() < 1000 && GPS.date.year() != 2000 && (int)GPS.hdop.hdop() > 0 && (int)GPS.hdop.hdop() < 3 )
           {
             gps_signal = true;
+            Serial.println("Got a gps signal!");
             break;
           }
         }
@@ -301,7 +302,8 @@ void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr )
         encryptPayload("pi", txpacket, ctx);
         whistle_mode = true;
         elaspsed_time = 0;
-        sendingMessage("pi");
+        Serial.println("Sending pi ack!");
+        sendingMessage(txpacket);
     }
 
     // If EEPROM Conf already setup, we ignore this step
@@ -332,11 +334,11 @@ void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr )
 // Lora Send
 ///////////////////////////////
 void sendingMessage(char *toSend) {
-    Serial.printf("\r\nsending packet \"%s\" , length %d\r\n", toSend, strlen(txpacket));
-    // Repeat the message 2 times
-    for (uint8_t i=0; i<2; ++i){
+    // Repeat the message 3 times
+    for (uint8_t i=0; i<3; ++i){
+      Serial.printf("\r\nsending packet \"%s\" , length %d\r\n", toSend, strlen(txpacket));
       Radio.Send( (uint8_t *)txpacket, strlen(txpacket) ); //send the package out
-      delay(0.2);
+      delay(800);
     }
 
 }
