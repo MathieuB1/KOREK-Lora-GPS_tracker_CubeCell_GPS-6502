@@ -20,7 +20,7 @@
 
 #include "LoRaWan_APP.h"
 #include "Arduino.h"
-#include "GPS_Air530Z.h"
+#include "GPS_Air530Z1.h"
 #include <EEPROM.h>
 #include "aes.h"
 
@@ -45,7 +45,7 @@
 #define LORA_IQ_INVERSION_ON                        false
 
 #define RX_TIMEOUT_VALUE                            1000
-#define BUFFER_SIZE                                 1024 // Define the payload size here
+#define BUFFER_SIZE                                 512 // Define the payload size here
 
 #define ONE_MINUTE 60000
 
@@ -61,9 +61,9 @@
 #define DEFAULT_AES_KEY "1234123412341234" // when EEPROM conf is empty
 
 //if GPS module is Air530Z, use this
-#define GPS_TIMEOUT 32000*3 // Air530Z spec says 32 seconds for cold acquisition
+#define GPS_TIMEOUT 32000*2 // Air530Z spec says 32 seconds for cold acquisition
 #define GPS_SLEEP_BEFORE_NEXT 6000 // wait 6 seconds for next capture
-Air530ZClass GPS;
+Air530Z1Class GPS;
 
 // Whistle
 #define WHISTLE_PERIOD ONE_MINUTE*2 // send gps during 2 mins
@@ -121,8 +121,8 @@ void setup() {
                                        LORA_SYMBOL_TIMEOUT, LORA_FIX_LENGTH_PAYLOAD_ON,
                                        0, true, 0, 0, LORA_IQ_INVERSION_ON, true );
 
-    memset(decrypted, 0, sizeof(decrypted));
-    memset(txpacket, 0, sizeof(txpacket));
+    memset(decrypted, 0, BUFFER_SIZE*sizeof(decrypted[0]));
+    memset(txpacket, 0, BUFFER_SIZE*sizeof(txpacket[0]));
 
     // Try loading and create Ctx for the AES key
     // Otherwise use the default one
@@ -131,7 +131,7 @@ void setup() {
       // Give a time slot when pressing the User Button
     pinMode(USER_KEY,INPUT);
     Serial.println("waiting for User key press");
-    delay(200);
+    delay(500);
     Serial.println("end User key press");
     int rstPinValue = digitalRead(USER_KEY);
     if (!rstPinValue) {
@@ -145,26 +145,53 @@ void setup() {
 }
 
 
+///////////////////////////////
+// Lora Send
+///////////////////////////////
+void sendingMessage(char *toSend, bool multi, int delay_in_seconds=800);
+void sendingMessage(char *toSend, bool multi, int delay_in_seconds) {
+    Serial.printf("\r\nsending packet \"%s\" , length %d\r\n", toSend, strlen(txpacket));
+    if (multi) {
+        // Repeat the message 4 times
+        for (uint8_t i=0; i<4; ++i){
+          Radio.Send( (uint8_t *)txpacket, strlen(txpacket) ); //send the package out
+          delay(800);
+        }
+    } else {
+          Radio.Send( (uint8_t *)txpacket, strlen(txpacket) ); //send the package out
+    }
+}
+///////////////////////////////
+// End Lora Send
+///////////////////////////////
+
+
 void loop()
 {
 
   unsigned long elaspsed_loop_time = millis();
-  
+
   // Wait for Lora Signal
   Radio.Rx( 0 );
   Radio.IrqProcess( );
   // Wait for message processing
-  delay(2000);
+  delay(3000);
   Radio.Sleep( );
-
+  
   // Get battery level:
   uint8_t batt_percent = getBatteryLevel();
+  String battStr;
+  battStr = String(batt_percent);
+  char batt[3];
+  battStr.toCharArray(batt,3);
+ 
   if(batt_percent < 25)
   {
     char message[8] = "low-";
-    strcat(message,(char*)batt_percent);
+    strcat(message,batt);
+    memset(txpacket, 0, BUFFER_SIZE*sizeof(txpacket[0]));
     encryptPayload(message, txpacket, ctx);
-    sendingMessage(txpacket);
+    sendingMessage(txpacket, false);
   }
     
   // User button pressed after reboot
@@ -192,8 +219,7 @@ void loop()
     Serial.println("Activating GPS...");
     
       // Init GPS
-      GPS.begin(115200);
-
+      GPS.begin(115200); // GPS stuck for 115200 baudrate really bad implmentation of GPS.begin() inside GPS_Air530Z.cpp
 
         uint32_t starttime = millis();
         while( (millis()-starttime) < GPS_TIMEOUT )
@@ -214,11 +240,6 @@ void loop()
         
       GPS.end();
       Serial.println("Stopping GPS...");
-        
-      String battStr;
-      battStr = String(batt_percent);
-      char batt[3];
-      battStr.toCharArray(batt,3);
         
       if (gps_signal)
       {
@@ -253,13 +274,19 @@ void loop()
         dataToSendToServer(lat,lon,date,batt,precision,message);
 
         // Sending the JSON message
+        memset(txpacket, 0, BUFFER_SIZE*sizeof(txpacket[0]));
         encryptPayload(message, txpacket, ctx);
-        sendingMessage(txpacket);
+        sendingMessage(txpacket, true);
         delay(GPS_SLEEP_BEFORE_NEXT);
 
       } else {
+
         Serial.println("GPS failed!");
-        // Do not send message, saving battery...
+        char message[8] = "ack-";
+        strcat(message,batt);
+        memset(txpacket, 0, BUFFER_SIZE*sizeof(txpacket[0]));
+        encryptPayload(message, txpacket, ctx);
+        sendingMessage(txpacket, false);
       }
 
     // Low power mode
@@ -299,11 +326,12 @@ void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr )
     if (strcmp(decrypted, "po") == 0)
     {
         Serial.println("whistle received!");
-        encryptPayload("pi", txpacket, ctx);
         whistle_mode = true;
         elaspsed_time = 0;
         Serial.println("Sending pi ack!");
-        sendingMessage(txpacket);
+        memset(txpacket, 0, BUFFER_SIZE*sizeof(txpacket[0]));
+        encryptPayload("pi", txpacket, ctx);
+        sendingMessage(txpacket, true, 900);
     }
 
     // If EEPROM Conf already setup, we ignore this step
@@ -314,34 +342,25 @@ void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr )
         if (String(decrypted).startsWith("init"))
         {
           Serial.println("\r\nServer conf received!");
-          char toStoreInMem[512] = {};
-          memset(toStoreInMem,0,sizeof(toStoreInMem));
+          char toStoreInMem[BUFFER_SIZE] = {};
+          memset(toStoreInMem,0,BUFFER_SIZE*sizeof(toStoreInMem[0]));
           memcpy(toStoreInMem, (char*)decrypted+5, strlen(decrypted)-5);
     
           writeStringToEEPROM(0, String(toStoreInMem));
           retrieveConfFromEEPROM();
 
           // Send confirmation to Server
+          memset(txpacket, 0, BUFFER_SIZE*sizeof(txpacket[0]));
           encryptPayload("init:ok", txpacket, ctxInit);
-          sendingMessage(txpacket);
+          bool multi = 1;
+          sendingMessage(txpacket, true);
           // Let's set the AES key received
           setAesKeyCtx();
         }
     }
 }
 
-///////////////////////////////
-// Lora Send
-///////////////////////////////
-void sendingMessage(char *toSend) {
-    // Repeat the message 3 times
-    for (uint8_t i=0; i<3; ++i){
-      Serial.printf("\r\nsending packet \"%s\" , length %d\r\n", toSend, strlen(txpacket));
-      Radio.Send( (uint8_t *)txpacket, strlen(txpacket) ); //send the package out
-      delay(800);
-    }
 
-}
 
 uint8_t getBatteryLevel() {
   // 5.5 End-Device Status (DevStatusReq, DevStatusAns)
@@ -359,8 +378,7 @@ uint8_t getBatteryLevel() {
 void onSleep()
 {
   Serial.printf("Going into lowpower mode, %d ms later wake up.\r\n",timetillwakeup);
-  Radio.Sleep();
-  lowpower=true;
+  delay(2);
   //timetillwakeup ms later wake up;
   TimerSetValue( &wakeUp, timetillwakeup );
   TimerStart( &wakeUp );
@@ -537,9 +555,9 @@ void setAesKeyCtx() {
 void setAesKey16b (clientConf* myLocalConf, uint8_t* AppKey){
       //We take only 4 chars for the AES key
     uint8_t buff[AES_SIZE+1] = {};
-    memset(buff,0,sizeof(buff));
+    memset(buff,0,(AES_SIZE+1)*sizeof(buff[0]));
     char key[AES_KEY_LENGHT+1]= {};
-    memset(key,0,sizeof(key));
+    memset(key,0,(AES_KEY_LENGHT+1)*sizeof(key[0]));
     
     memcpy(key, myLocalConf->aes, sizeof(key));
     for (int i=0;i<AES_KEY_LENGHT;i++){
@@ -553,11 +571,11 @@ void decryptPayload(uint8_t *payload, char *decrypted, AES_ctx &ctx) {
     uint8_t header_length = 4;
     uint8_t size_length = 16;
 
-    memset(decrypted, 0, sizeof(decrypted));
+    memset(decrypted, 0, BUFFER_SIZE*sizeof(decrypted[0]));
     for (int i=0; i<(strlen((char*)payload)-header_length); i+=size_length)
     {
        uint8_t buff_decode[size_length+1] = {};
-       memset(buff_decode, 0, sizeof(buff_decode));
+       memset(buff_decode, 0, (size_length+1)*sizeof(buff_decode[0]));
        for(uint8_t j=0; j<16; j++){
           buff_decode[j]=payload[i+header_length+j];
        }
@@ -575,7 +593,7 @@ void encryptPayload(char *input, char *txpacket, AES_ctx &ctx) {
   int linecounter = 1;
   char message[strlen(input)+size_length] = {};
 
-  memset(message, 0, sizeof(input)+size_length);
+  memset(message, 0, sizeof(message[0])*(strlen(input)+size_length));
   strcat(message, input);
   
   // Set Lora Header
@@ -586,7 +604,7 @@ void encryptPayload(char *input, char *txpacket, AES_ctx &ctx) {
 
   // The final message must be a multiple of 16, so we set padding spaces
   uint8_t buff_to_add[size_length+1] = {};
-  memset(buff_to_add, 0, sizeof(buff_to_add));
+  memset(buff_to_add, 0, (size_length+1)*sizeof(buff_to_add[0]));
   memset(buff_to_add, ' ', space_to_add);
   strcat(message, (char*)buff_to_add);
 

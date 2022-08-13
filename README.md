@@ -18,3 +18,6 @@ Send GPS data to a Lora Local Node using the Heltec Cubecell AB02S Board
  * 2. Install Cubecell package for Arduino https://heltec-automation-docs.readthedocs.io/en/latest/cubecell/quick_start.html
  * 3. Add aes.h and aes.cpp to files to Arduino
  * 4. Compile and Upload the code by using the Arduino GUI
+
+ # Receiver
+ - The receiver is written in mycropython on esp32 board see https://github.com/MathieuB1/KOREK-WifiLora-GPS_tracker
