@@ -1,5 +1,6 @@
 #include "Arduino.h"
 #include "GPS_Air530Z1.h"
+#include <TimeLib.h>
 
 static String calchecksum(String cmd)
 {
@@ -19,69 +20,18 @@ Air530Z1Class::Air530Z1Class(uint8_t powerCtl,uint8_t modePin)
   :_powerCtl(powerCtl),_modePin(modePin)
   {}
 
-void Air530Z1Class::begin(uint32_t baud)
+void Air530Z1Class::begin()
 {
+  uint16_t baud = 9600;
   pinMode(_powerCtl,OUTPUT);
   digitalWrite(_powerCtl, LOW);
 
-  int i = 0;
-  GPSSerial.begin(bauds[i]);
+  GPSSerial.begin(baud);
 
-  Serial.println("GPS Current baudrate detecting...");
-  while(getNMEA() == "0" )
-  {
-    i++;
-    if( i== bauds_array )
-    {
-      i=0;
-    }
-    //Serial.println(bauds[i]);
-    GPSSerial.updateBaudRate(bauds[i]);
-    delay(50);
-    GPSSerial.flush();
-  }
-  Serial.print("GPS Current baudrate detected:");
-  Serial.println(bauds[i]);
+  _baud = baud;
+  Serial.print("GPS baudrate updated to ");
+  Serial.println(baud);
 
-  setBaud(baud);
-  delay(50);
-  GPSSerial.updateBaudRate(baud);
-  delay(50);
-  GPSSerial.flush();
-
-  Serial.printf("GPS baudrate updating to %d\r\n",baud);
-  uint32_t timeTemp = millis();
-
-  while(getNMEA() == "0")
-  {
-    if((millis()-timeTemp)<5000)
-    {
-      GPSSerial.updateBaudRate(bauds[i]);
-      delay(50);
-      setBaud(baud);
-      delay(50);
-      GPSSerial.updateBaudRate(baud);
-      delay(50);
-      GPSSerial.flush();
-    }
-    else
-    {
-      break;
-    }
-  }
-
-  if( (millis()-timeTemp)>5000)
-  {
-    GPSSerial.updateBaudRate(bauds[i]);
-    _baud = bauds[i];
-    Serial.printf("GPS baudrate updated failed, use GPS baudrate %d\r\n",_baud);
-  }
-  else
-  {
-    _baud = baud;
-    Serial.print("GPS baudrate updated to ");
-    Serial.println(baud);
-  }
   
   delay(10);
   setmode(MODE_GPS_BEIDOU_GLONASS);
@@ -212,209 +162,4 @@ void Air530Z1Class::sendcmd(String cmd)
     GPSSerial.readStringUntil('\r');
   }
   GPSSerial.print(cmd);
-}
-
-String Air530Z1Class::getAll()
-{
-  String nmea = "";
-  uint32_t starttime = millis();
-  while(millis() - starttime <1000)
-  {
-    if ( GPSSerial.available())
-    {
-      while(GPSSerial.available())
-      {
-        nmea+=(char)GPSSerial.read();
-        int n = 0;
-        while(n<=1000)
-        {
-          if(GPSSerial.available())
-            break;
-          delayMicroseconds(1);
-          n++;
-        }
-      }
-      return nmea;
-    }
-  }
-  return "0";
-}
-
-String Air530Z1Class::getNMEA()
-{
-  uint32_t starttime = millis();
-  String nmea = "";
-  char buff[128]; 
-  int index = 0;
-  while(millis() - starttime <1000)
-  {
-    if(GPSSerial.available())
-    {
-      char c = GPSSerial.read();
-      if(c=='$')
-      {
-        nmea += c;
-        index = GPSSerial.readBytesUntil('\r',buff,127);
-        buff[index]=0;
-        if(buff[index-3]!='*')
-          return "0";
-
-        nmea += (String)buff;
-        return nmea;
-      }
-    }
-  }
-  return "0";
-}
-
-String Air530Z1Class::getRMC()
-{
-  String nmea = "";
-  String res="";
-  uint32_t starttime = millis();
-  while(millis() - starttime <1000)
-  {
-    if ( GPSSerial.available())
-    {
-      char c = GPSSerial.read();
-      if(c=='$')
-      {
-        nmea = GPSSerial.readStringUntil('\r');
-        if(nmea[2] == 'R' && nmea[3] == 'M' && nmea[4] == 'C')
-        {
-          res = res + c + nmea + "\r\n";
-        }
-      }
-    }
-  }
-  if(res!="")
-    return res;
-  return "0";
-}
-
-
-String Air530Z1Class::getGGA()
-{
-  String nmea = "";
-  String res="";
-  uint32_t starttime = millis();
-  while(millis() - starttime <1000)
-  {
-    if ( GPSSerial.available())
-    {
-      char c = GPSSerial.read();
-      if(c=='$')
-      {
-        nmea = GPSSerial.readStringUntil('\r');
-        if(nmea[2] == 'G' && nmea[3] == 'G' && nmea[4] == 'A')
-        {
-          res = res + c + nmea + "\r\n";
-        }
-      }
-    }
-  }
-  if(res!="")
-    return res;
-  return "0";
-}
-
-String Air530Z1Class::getVTG()
-{
-  String nmea = "";
-  String res="";
-  uint32_t starttime = millis();
-  while(millis() - starttime <1000)
-  {
-    if ( GPSSerial.available())
-    {
-      char c = GPSSerial.read();
-      if(c=='$')
-      {
-        nmea = GPSSerial.readStringUntil('\r');
-        if(nmea[2] == 'V' && nmea[3] == 'T' && nmea[4] == 'G')
-        {
-          res = res + c + nmea + "\r\n";
-        }
-      }
-    }
-  }
-  if(res!="")
-    return res;
-  return "0";
-}
-
-String Air530Z1Class::getGSA()
-{
-  String nmea = "";
-  String res="";
-  uint32_t starttime = millis();
-  while(millis() - starttime <1000)
-  {
-    if ( GPSSerial.available())
-    {
-      char c = GPSSerial.read();
-      if(c=='$')
-      {
-        nmea = GPSSerial.readStringUntil('\r');
-        if(nmea[2] == 'G' && nmea[3] == 'S' && nmea[4] == 'A')
-        {
-          res = res + c + nmea + "\r\n";
-        }
-      }
-    }
-  }
-  if(res!="")
-    return res;
-  return "0";
-}
-
-
-String Air530Z1Class::getGSV()
-{
-  String nmea = "";
-  String res="";
-  uint32_t starttime = millis();
-  while(millis() - starttime <1000)
-  {
-    if ( GPSSerial.available())
-    {
-      char c = GPSSerial.read();
-      if(c=='$')
-      {
-        nmea = GPSSerial.readStringUntil('\r');
-        if(nmea[2] == 'G' && nmea[3] == 'S' && nmea[4] == 'V')
-        {
-          res = res + c + nmea + "\r\n";
-        }
-      }
-    }
-  }
-  if(res!="")
-    return res;
-  return "0";
-}
-
-String Air530Z1Class::getGLL()
-{
-  String nmea = "";
-  String res="";
-  uint32_t starttime = millis();
-  while(millis() - starttime <1000)
-  {
-    if ( GPSSerial.available())
-    {
-      char c = GPSSerial.read();
-      if(c=='$')
-      {
-        nmea = GPSSerial.readStringUntil('\r');
-        if(nmea[2] == 'G' && nmea[3] == 'L' && nmea[4] == 'L')
-        {
-          res = res + c + nmea + "\r\n";
-        }
-      }
-    }
-  }
-  if(res!="")
-    return res;
-  return "0";
 }

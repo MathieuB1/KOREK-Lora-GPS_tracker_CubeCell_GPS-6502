@@ -8,20 +8,12 @@
 class Air530Z1Class:public TinyGPSPlus{
 public:
   Air530Z1Class(uint8_t powerCtl=GPIO14,uint8_t modePin=GPIO11);
-  void begin(uint32_t baud = 9600);
+  void begin();
   void setmode(GPSMODE mode);
   void setNMEA(uint8_t nmeamode);
   int available(void);
   void setBaud(uint32_t baud);
   int read(void);
-  String getNMEA();
-  String getRMC();
-  String getGGA();
-  String getVTG();
-  String getGSV();
-  String getGSA();
-  String getGLL();
-  String getAll();
 /*  gps_status_t WGSToGCJ(gps_status_t status);
   gps_status_t GCJToBD(gps_status_t status);
   gps_status_t WGSToBD(gps_status_t status);*/

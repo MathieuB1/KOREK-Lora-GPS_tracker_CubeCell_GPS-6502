@@ -24,6 +24,8 @@
 #include <EEPROM.h>
 #include "aes.h"
 
+// WatchDog
+#include "innerWdt.h"
 
 // Lora
 #define RF_FREQUENCY                                868000000 // Hz
@@ -138,7 +140,10 @@ void setup() {
       resetConf=true;
       Serial.println("Reset the conf...");
     }
-    
+
+    /* Enable the WDT, autofeed */
+    innerWdtEnable(false);
+
     TimerInit( &sleep, onSleep );
     TimerInit( &wakeUp, onWakeUp );
 
@@ -148,18 +153,23 @@ void setup() {
 ///////////////////////////////
 // Lora Send
 ///////////////////////////////
-void sendingMessage(char *toSend, bool multi, int delay_in_seconds=800);
-void sendingMessage(char *toSend, bool multi, int delay_in_seconds) {
+void sendingMessage(char *toSend, bool multi) {
+
+    CySysWdtEnable(); // Activate the WDT
+    feedInnerWdt();
     Serial.printf("\r\nsending packet \"%s\" , length %d\r\n", toSend, strlen(txpacket));
     if (multi) {
         // Repeat the message 4 times
         for (uint8_t i=0; i<4; ++i){
           Radio.Send( (uint8_t *)txpacket, strlen(txpacket) ); //send the package out
           delay(800);
+          feedInnerWdt();
         }
     } else {
           Radio.Send( (uint8_t *)txpacket, strlen(txpacket) ); //send the package out
     }
+
+    CySysWdtDisable(); // Deactivate the WDT
 }
 ///////////////////////////////
 // End Lora Send
@@ -168,6 +178,8 @@ void sendingMessage(char *toSend, bool multi, int delay_in_seconds) {
 
 void loop()
 {
+
+  CySysWdtDisable(); // Deactivate the WDT
 
   unsigned long elaspsed_loop_time = millis();
 
@@ -217,18 +229,22 @@ void loop()
     bool gps_signal = false;
     
     Serial.println("Activating GPS...");
-    
-      // Init GPS
-      GPS.begin(115200); // GPS stuck for 115200 baudrate really bad implmentation of GPS.begin() inside GPS_Air530Z.cpp
 
-        uint32_t starttime = millis();
-        while( (millis()-starttime) < GPS_TIMEOUT )
+      CySysWdtEnable(); // Activate the WDT
+      // Init GPS
+      GPS.begin(); // GPS stuck for 115200 baudrate really bad implmentation of GPS.begin() inside GPS_Air530Z.cpp
+
+        unsigned long starttime = millis();
+        while( (unsigned long)(millis()-starttime) < GPS_TIMEOUT )
         {
+
           while (GPS.available() > 0)
           {
             GPS.encode(GPS.read());
           }
 
+          feedInnerWdt();
+          
           // gps fixed in a second
           if( GPS.location.age() < 1000 && GPS.date.year() != 2000 && (int)GPS.hdop.hdop() > 0 && (int)GPS.hdop.hdop() < 3 )
           {
@@ -236,28 +252,27 @@ void loop()
             Serial.println("Got a gps signal!");
             break;
           }
+      
         }
         
       GPS.end();
+      CySysWdtDisable(); // Deactivate the WDT
       Serial.println("Stopping GPS...");
         
       if (gps_signal)
       {
 
         Serial.println("Got gps signal");
-        Serial.printf("%d/%02d/%02d",GPS.date.year(),GPS.date.day(),GPS.date.month());
+        Serial.printf("%d/%02d/%02d\n",GPS.date.year(),GPS.date.day(),GPS.date.month());
 
-         // Preparing the message to send
-        String dateStr, tmpdate, tmpmonth, latStr, lonStr, precisionStr;
+        String tmpdate = (String(GPS.date.day()).length() == 1) ? "0" + String(GPS.date.day()) : String(GPS.date.day());
+        String tmpmonth = (String(GPS.date.month()).length() == 1) ? "0" + String(GPS.date.month()) :  String(GPS.date.month());
+        
+        String dateStr = tmpdate + tmpmonth + String(GPS.date.year())[2] + String(GPS.date.year())[3];
+        String latStr = String(GPS.location.lat(),8);
+        String lonStr = String(GPS.location.lng(),8);
+        String precisionStr = String(GPS.hdop.hdop(),4);
 
-        tmpdate = (String(GPS.date.day()).length() == 1) ? "0" + String(GPS.date.day()) : String(GPS.date.day());
-        tmpmonth = (String(GPS.date.month()).length() == 1) ? "0" + String(GPS.date.month()) :  String(GPS.date.month());
-        
-        dateStr += tmpdate + tmpmonth + String(GPS.date.year())[2] + String(GPS.date.year())[3];
-        latStr += String(GPS.location.lat(),8);
-        lonStr += String(GPS.location.lng(),8);
-        precisionStr += String(GPS.hdop.hdop(),4);
-        
         char date[7];
         dateStr.toCharArray(date,7);
         char lat[10];
@@ -276,6 +291,7 @@ void loop()
         // Sending the JSON message
         memset(txpacket, 0, BUFFER_SIZE*sizeof(txpacket[0]));
         encryptPayload(message, txpacket, ctx);
+         Serial.println("stop here sometimes after low power mode has been entered once!!");
         sendingMessage(txpacket, true);
         delay(GPS_SLEEP_BEFORE_NEXT);
 
@@ -331,7 +347,7 @@ void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr )
         Serial.println("Sending pi ack!");
         memset(txpacket, 0, BUFFER_SIZE*sizeof(txpacket[0]));
         encryptPayload("pi", txpacket, ctx);
-        sendingMessage(txpacket, true, 900);
+        sendingMessage(txpacket, true);
     }
 
     // If EEPROM Conf already setup, we ignore this step
