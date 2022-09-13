@@ -52,7 +52,6 @@
 #define ONE_MINUTE 60000
 
 // Sleep Config
-#define timetillsleep ONE_MINUTE * 1 // wake up each 1 minutes
 #define timetillwakeup ONE_MINUTE * 1
 
 // Internal AES
@@ -144,9 +143,8 @@ void setup() {
     /* Enable the WDT, autofeed */
     innerWdtEnable(false);
 
-    TimerInit( &sleep, onSleep );
+    /* On wake up deepsleep mode */
     TimerInit( &wakeUp, onWakeUp );
-
 }
 
 
@@ -291,7 +289,6 @@ void loop()
         // Sending the JSON message
         memset(txpacket, 0, BUFFER_SIZE*sizeof(txpacket[0]));
         encryptPayload(message, txpacket, ctx);
-         Serial.println("stop here sometimes after low power mode has been entered once!!");
         sendingMessage(txpacket, true);
         delay(GPS_SLEEP_BEFORE_NEXT);
 
@@ -402,7 +399,7 @@ void onSleep()
 
 void onWakeUp()
 {
-  Serial.printf("Woke up, %d ms later into lowpower mode.\r\n",timetillsleep);
+  TimerStop(&wakeUp);
   lowpower=false;
   elaspsed_time += timetillwakeup;
   if (!whistle_mode && elaspsed_time < myLocalConf.frequency * 1000) 
@@ -435,7 +432,7 @@ void resetConfig() {
 void dataToSendToServer(char *lat, char *lon, char *date, char *batt, char *precision, char *message) {
     // Init JSON
     strcat(message, "{");
-    strcat(message, "\"title\": \"");
+    strcat(message, "\"title\":\"");
     strcat(message, myLocalConf.title);
     strcat(message, "\", ");
 
