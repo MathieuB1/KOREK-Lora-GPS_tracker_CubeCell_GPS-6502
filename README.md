@@ -4,6 +4,7 @@
 Send GPS data to a Lora Local Node using the Heltec Cubecell AB02S Board 
 
 # Features:
+Transmit data with AES with Base64 encoding
 
 ## Scenario:
  * 1. Receive conf from Local Server see https://github.com/MathieuB1/KOREK-WifiLora-GPS_tracker (AES key + Name + Sleep Frequency)
@@ -16,7 +17,7 @@ Send GPS data to a Lora Local Node using the Heltec Cubecell AB02S Board
 
  * 1. Install arduino https://www.arduino.cc/en/software
  * 2. Install Cubecell package for Arduino https://heltec-automation-docs.readthedocs.io/en/latest/cubecell/quick_start.html
- * 3. Add aes.h and aes.cpp to files to Arduino
+ * 3. Add aes.h, aes.cpp, Base64.h, Base64.cpp to files to Arduino
  * 4. Compile and Upload the code by using the Arduino GUI
 
  # Receiver

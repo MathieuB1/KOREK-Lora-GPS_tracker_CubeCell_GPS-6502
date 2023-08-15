@@ -23,6 +23,8 @@
 #include "GPS_Air530Z1.h"
 #include <EEPROM.h>
 #include "aes.h"
+#include "Base64.h"
+
 
 // WatchDog
 #include "innerWdt.h"
@@ -91,7 +93,7 @@ static RadioEvents_t RadioEvents;
 double txNumber;
 int16_t rssi,rxSize;
 
-unsigned long elaspsed_time = 0;
+unsigned long elapsed_time = 0;
 
 //Some utilities for going into low power mode
 static TimerEvent_t sleep;
@@ -152,21 +154,27 @@ void setup() {
 // Lora Send
 ///////////////////////////////
 void sendingMessage(char *toSend, bool multi) {
-
     CySysWdtEnable(); // Activate the WDT
     feedInnerWdt();
-    Serial.printf("\r\nsending packet \"%s\" , length %d\r\n", toSend, strlen(txpacket));
+
+
+    //size_t packetLength = strlen(toSend); // Get the length of the packet
+
+    char* encodedPacket = encodeBase64(String(toSend));
+    size_t packetLength = strlen(encodedPacket);
+
+    Serial.printf("\r\nsending packet \"%s\" , length %d\r\n", encodedPacket, strlen(encodedPacket));
+
     if (multi) {
         // Repeat the message 4 times
-        for (uint8_t i=0; i<4; ++i){
-          Radio.Send( (uint8_t *)txpacket, strlen(txpacket) ); //send the package out
-          delay(800);
-          feedInnerWdt();
+        for (uint8_t i = 0; i < 4; ++i) {
+            Radio.Send((uint8_t *)encodedPacket, packetLength); // Send the packet
+            delay(800);
+            feedInnerWdt();
         }
     } else {
-          Radio.Send( (uint8_t *)txpacket, strlen(txpacket) ); //send the package out
+        Radio.Send((uint8_t *)encodedPacket, packetLength); // Send the packet
     }
-
     CySysWdtDisable(); // Deactivate the WDT
 }
 ///////////////////////////////
@@ -183,10 +191,10 @@ void loop()
 
   // Wait for Lora Signal
   Radio.Rx( 0 );
-  Radio.IrqProcess( );
+  Radio.IrqProcess();
   // Wait for message processing
   delay(3000);
-  Radio.Sleep( );
+  Radio.Sleep();
   
   // Get battery level:
   uint8_t batt_percent = getBatteryLevel();
@@ -215,8 +223,8 @@ void loop()
   if(whistle_mode){ 
     lowpower = false;
     triggerGps = true;
-    if(elaspsed_time > WHISTLE_PERIOD) {
-      elaspsed_time = 0;
+    if(elapsed_time > WHISTLE_PERIOD) {
+      elapsed_time = 0;
       whistle_mode=false;
       lowpower = true;
     }
@@ -261,18 +269,20 @@ void loop()
       {
 
         Serial.println("Got gps signal");
-        Serial.printf("%d/%02d/%02d\n",GPS.date.year(),GPS.date.day(),GPS.date.month());
-
+        String tmpyear = String(GPS.date.year());
         String tmpdate = (String(GPS.date.day()).length() == 1) ? "0" + String(GPS.date.day()) : String(GPS.date.day());
-        String tmpmonth = (String(GPS.date.month()).length() == 1) ? "0" + String(GPS.date.month()) :  String(GPS.date.month());
+        String tmpmonth = (String(GPS.date.month()).length() == 1) ? "0" + String(GPS.date.month()) : String(GPS.date.month());
+        String tmphour = (String(GPS.time.hour()).length() == 1) ? "0" + String(GPS.time.hour()) : String(GPS.time.hour());
+        String tmpminute = (String(GPS.time.minute()).length() == 1) ? "0" + String(GPS.time.minute()) : String(GPS.time.minute());
+        String tmpsecond = (String(GPS.time.second()).length() == 1) ? "0" + String(GPS.time.second()) : String(GPS.time.second());
         
-        String dateStr = tmpdate + tmpmonth + String(GPS.date.year())[2] + String(GPS.date.year())[3];
-        String latStr = String(GPS.location.lat(),8);
-        String lonStr = String(GPS.location.lng(),8);
-        String precisionStr = String(GPS.hdop.hdop(),4);
-
-        char date[7];
-        dateStr.toCharArray(date,7);
+        String dateStr = tmpdate + "/" + tmpmonth + "/" + tmpyear + " " + tmphour + ":" + tmpminute + ":" + tmpsecond;
+        String latStr = String(GPS.location.lat(), 8);
+        String lonStr = String(GPS.location.lng(), 8);
+        String precisionStr = String(GPS.hdop.hdop(), 4);
+        
+        char date[20];
+        dateStr.toCharArray(date, 20);
         char lat[10];
         latStr.toCharArray(lat,8);
         char lon[10];
@@ -281,10 +291,12 @@ void loop()
         precisionStr.toCharArray(precision,4);
 
 
-        // gps = {"title": "poppiz", "lat":7.101813, "lon":43.58843, "date": "300919", "batt": 86, "precision":3.0}
-        
+
         char message[1024] = "";
         dataToSendToServer(lat,lon,date,batt,precision,message);
+       
+        //char message[1024] = "{\"title\": \"poppiz\", \"lat\":7.101813, \"lon\":43.58843,  "date": "16/07/2023 14:43:46", \"batt\": 86, \"precision\":3.0}";
+        
 
         // Sending the JSON message
         memset(txpacket, 0, BUFFER_SIZE*sizeof(txpacket[0]));
@@ -310,8 +322,8 @@ void loop()
 
   }
 
-  elaspsed_time += millis() - elaspsed_loop_time;
-  Serial.printf("\nElaspsed time: %d\n", elaspsed_time);   
+  elapsed_time += millis() - elaspsed_loop_time;
+  Serial.printf("\nElaspsed time: %d\n", elapsed_time);   
   
   if(lowpower){
     onSleep();
@@ -340,7 +352,7 @@ void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr )
     {
         Serial.println("whistle received!");
         whistle_mode = true;
-        elaspsed_time = 0;
+        elapsed_time = 0;
         Serial.println("Sending pi ack!");
         memset(txpacket, 0, BUFFER_SIZE*sizeof(txpacket[0]));
         encryptPayload("pi", txpacket, ctx);
@@ -365,7 +377,6 @@ void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr )
           // Send confirmation to Server
           memset(txpacket, 0, BUFFER_SIZE*sizeof(txpacket[0]));
           encryptPayload("init:ok", txpacket, ctxInit);
-          bool multi = 1;
           sendingMessage(txpacket, true);
           // Let's set the AES key received
           setAesKeyCtx();
@@ -401,14 +412,14 @@ void onWakeUp()
 {
   TimerStop(&wakeUp);
   lowpower=false;
-  elaspsed_time += timetillwakeup;
-  if (!whistle_mode && elaspsed_time < myLocalConf.frequency * 1000) 
+  elapsed_time += timetillwakeup;
+  if (!whistle_mode && elapsed_time < myLocalConf.frequency * 1000) 
   {
     Serial.printf("Going into lowpower mode at next loop.\r\n");
     triggerGps = false;
     lowpower=true;
   } else {
-    elaspsed_time = 0;
+    elapsed_time = 0;
     triggerGps = true;
   }
 
@@ -584,13 +595,15 @@ void decryptPayload(uint8_t *payload, char *decrypted, AES_ctx &ctx) {
     uint8_t header_length = 4;
     uint8_t size_length = 16;
 
+    char* decodedPacket = decodeBase64((const char*)(payload + header_length));
+
     memset(decrypted, 0, BUFFER_SIZE*sizeof(decrypted[0]));
-    for (int i=0; i<(strlen((char*)payload)-header_length); i+=size_length)
+    for (int i=0; i<(strlen(decodedPacket)); i+=size_length)
     {
        uint8_t buff_decode[size_length+1] = {};
        memset(buff_decode, 0, (size_length+1)*sizeof(buff_decode[0]));
        for(uint8_t j=0; j<16; j++){
-          buff_decode[j]=payload[i+header_length+j];
+          buff_decode[j]=(uint8_t)decodedPacket[i+j];
        }
        AES_ECB_decrypt(&ctx, (uint8_t*)buff_decode);
        strcat(decrypted, (char*)buff_decode);
@@ -631,6 +644,54 @@ void encryptPayload(char *input, char *txpacket, AES_ctx &ctx) {
   }
   memcpy(txpacket,loraHeader,4);
 }
+
+///////////////////////////////
+// Base64 Tools
+///////////////////////////////
+char* encodeBase64(const String input) {
+    Serial.printf("\r\nEncode Base64 message \"%s\" , length %d\r\n", input.c_str(), input.length());
+    
+    int inputStringLength = input.length();
+    int encodedLength = Base64.encodedLength(inputStringLength);
+
+    // Create a character array with a fixed size for the encoded string
+    char* encodedString = new char[encodedLength + 1];
+
+    // Set the entire array to null bytes
+    memset(encodedString, 0, encodedLength + 1);
+
+    // Convert the input string to a character array
+    char inputCharArray[inputStringLength + 1];
+    input.toCharArray(inputCharArray, inputStringLength + 1);
+
+    // Encode the input character array in Base64
+    Base64.encode(encodedString, inputCharArray, inputStringLength);
+
+    return encodedString;
+}
+
+char* decodeBase64(const char* input) {
+    Serial.printf("\r\nDecode Base64 message \"%s\" , length %d\r\n", input, strlen(input));
+    
+    int inputStringLength = strlen(input);
+
+    // Create temporary non-const character array
+    char* tempInput = new char[inputStringLength + 1];
+    strcpy(tempInput, input);
+
+    int decodedLength = Base64.decodedLength(tempInput, inputStringLength);
+
+    // Create decoded string
+    char* decodedString = new char[decodedLength + 1];
+    memset(decodedString, 0, decodedLength + 1);
+    Base64.decode(decodedString, tempInput, inputStringLength);
+
+    // Clean up
+    delete[] tempInput;
+
+    return decodedString;
+}
+
 
 ///////////////////////////////
 // Utils
